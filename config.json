@@ -1,0 +1,20 @@
+{
+    "servers": {
+        "guildId1": {
+            "antiLinks": true,
+            "logChannel": "123456789012345678"
+        },
+        "guildId2": {
+            "antiLinks": false,
+            "logChannel": "987654321098765432"
+        },
+        "1305036939078144010": {
+            "antiLinks": true,
+            "logChannel": null
+        },
+        "1295887233416564736": {
+            "antiLinks": true,
+            "logChannel": null
+        }
+    }
+}
