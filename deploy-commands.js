@@ -16,7 +16,15 @@ const commands = [
             option.setName('canal')
                 .setDescription('Selecciona el canal donde se enviarán los logs.')
                 .setRequired(true)
-        )
+        ),
+        new SlashCommandBuilder()
+        .setName('scanlink')
+        .setDescription('🔍 Analiza un enlace con VirusTotal.')
+        .addStringOption(option =>
+            option.setName('url')
+                .setDescription('El enlace que deseas analizar.')
+                .setRequired(true)
+        ) // 🔴 ERROR: Faltaba cerrar este paréntesis
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
