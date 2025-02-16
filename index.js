@@ -1,7 +1,8 @@
 require('dotenv').config(); 
-
 const axios = require('axios'); // Importar Axios para subir archivos a Imgur
+
 const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID; // Cargar Client ID de Imgur
+const VIRUSTOTAL_API_KEY = process.env.VIRUSTOTAL_API_KEY; // Cargar API Key de VirusTotal
 
 // Cargar el token del bot
 const token = process.env.TOKEN;
@@ -37,6 +38,46 @@ async function uploadToImgur(imageUrl) {
         return null;
     }
 }
+
+async function scanUrlWithVirusTotal(url) {
+    try {
+        // Convertir la URL en formato x-www-form-urlencoded
+        const params = new URLSearchParams();
+        params.append('url', url);
+
+        // Enviar la URL a VirusTotal para su análisis
+        const response = await axios.post(
+            'https://www.virustotal.com/api/v3/urls',
+            params, // Enviar en formato correcto
+            { headers: { 'x-apikey': VIRUSTOTAL_API_KEY, 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+
+        const analysisId = response.data.data.id;
+
+        // Esperar unos segundos antes de obtener el resultado
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // Obtener el resultado del análisis
+        const result = await axios.get(`https://www.virustotal.com/api/v3/analyses/${analysisId}`, {
+            headers: { 'x-apikey': VIRUSTOTAL_API_KEY }
+        });
+
+        const stats = result.data.data.attributes.stats;
+        const malicious = stats.malicious || 0;
+        const suspicious = stats.suspicious || 0;
+
+        if (malicious > 0 || suspicious > 0) {
+            return `⚠️ **El enlace es sospechoso o malicioso.**\n🔍 **Ver detalles:** [Aquí](https://www.virustotal.com/gui/url/${analysisId})`;
+        }
+
+        return `✅ **El enlace es seguro.**\n🔍 **Ver detalles:** [Aquí](https://www.virustotal.com/gui/url/${analysisId})`;
+
+    } catch (error) {
+        console.error('❌ Error al analizar el enlace:', error.response ? error.response.data : error.message);
+        return '⚠️ **No se pudo analizar el enlace con VirusTotal.**';
+    }
+}
+
 
 // Asegurarse de que haya configuración para el servidor
 function ensureServerConfig(guildId) {
@@ -142,7 +183,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const user = interaction.options.getUser('usuario') || interaction.user;
             const member = await interaction.guild.members.fetch(user.id);
             const roles = member.roles.cache.filter(role => role.id !== interaction.guild.id).map(role => role.toString()).join(', ') || 'Ninguno';
-
+        
             const embed = new EmbedBuilder()
                 .setColor(member.displayHexColor !== '#000000' ? member.displayHexColor : '#0099ff')
                 .setTitle(`Información de ${user.tag}`)
@@ -156,9 +197,22 @@ client.on(Events.InteractionCreate, async interaction => {
                 )
                 .setFooter({ text: `Solicitado por ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() })
                 .setTimestamp();
-
+        
             await interaction.reply({ embeds: [embed] });
-        } else if (commandName === 'help') {
+        
+        } else if (commandName === 'scanlink') {
+            const url = options.getString('url');
+            if (!url) {
+                return interaction.reply({ content: '❌ Debes proporcionar un enlace para analizar.', ephemeral: true });
+            }
+        
+            await interaction.deferReply(); // Esperar la respuesta de VirusTotal
+        
+            const result = await scanUrlWithVirusTotal(url);
+            await interaction.editReply(result);
+        
+        } else if (commandName === 'help') {  // ✅ Ahora está bien
+        
             const embed = new EmbedBuilder()
                 .setColor(0x0099ff)
                 .setTitle('📜 Lista de Comandos')
@@ -166,6 +220,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 .addFields(
                     { name: '/ping', value: '🏓 Comprueba la latencia del bot.' },
                     { name: '/hola', value: '👋 Saluda al bot.' },
+                    { name: '/scanlink', value: '⚙️ Escanea un link para detectar si es malicioso.' },
                     { name: '/anti_links_enable', value: '🚫 Activa el anti-links para bloquear invitaciones de Discord.' },
                     { name: '/anti_links_disable', value: '✅ Desactiva el anti-links.' },
                     { name: '/serverinfo', value: '📌 Muestra información del servidor.' },
@@ -177,7 +232,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             await interaction.reply({ embeds: [embed] });
         }
-    } catch (error) {
+    } catch (error) { // ✅ AHORA EL CATCH ESTÁ BIEN COLOCADO
         console.error('Error al ejecutar el comando:', error);
         await interaction.reply({ content: '❌ Hubo un error al ejecutar el comando.', ephemeral: true });
     }
