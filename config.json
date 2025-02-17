@@ -10,11 +10,23 @@
         },
         "1305036939078144010": {
             "antiLinks": true,
-            "logChannel": null
+            "logChannel": "1305077832329986088"
         },
         "1295887233416564736": {
             "antiLinks": true,
             "logChannel": null
+        },
+        "1340422603940036638": {
+            "antiLinks": true,
+            "logChannel": "1340422604443484294"
+        },
+        "1295439768519315457": {
+            "antiLinks": false,
+            "logChannel": null
+        },
+        "1323823332516298782": {
+            "antiLinks": false,
+            "logChannel": "1340852196723654696"
         }
     }
 }
