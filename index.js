@@ -15,6 +15,56 @@ if (!token) {
 
 const fs = require('fs');
 const { Client, GatewayIntentBits, PermissionsBitField, Events, EmbedBuilder } = require("discord.js");
+const mutesPath = './mutes.json';
+const bansPath = './bans.json';
+
+// Cargar mutes y bans desde los archivos si existen
+let mutes = fs.existsSync(mutesPath) ? JSON.parse(fs.readFileSync(mutesPath, 'utf8')) : {};
+let bans = fs.existsSync(bansPath) ? JSON.parse(fs.readFileSync(bansPath, 'utf8')) : {};
+
+// Función para guardar mutes en mutes.json
+function saveMutes() {
+    fs.writeFileSync(mutesPath, JSON.stringify(mutes, null, 4));
+}
+
+// Función para guardar bans en bans.json
+function saveBans() {
+    fs.writeFileSync(bansPath, JSON.stringify(bans, null, 4));
+}
+
+// Función para agregar un mute
+async function muteUser(userId, time) {
+    const until = new Date(Date.now() + time * 60000); // Calcula el tiempo de expiración
+    mutes[userId] = { until: until.toISOString() };
+
+    saveMutes();  // Guarda el mute
+    return `Usuario muteado hasta ${until.toISOString()}`;
+}
+
+// Función para eliminar un mute
+async function unmuteUser(userId) {
+    delete mutes[userId];
+
+    saveMutes();  // Guarda los cambios
+    return `Usuario desmuteado.`;
+}
+
+// Función para agregar un ban
+async function banUser(userId, time) {
+    const until = new Date(Date.now() + time * 86400000); // Calcula el tiempo de expiración (en días)
+    bans[userId] = { until: until.toISOString() };
+
+    saveBans();  // Guarda el ban
+    return `Usuario baneado hasta ${until.toISOString()}`;
+}
+
+// Función para eliminar un ban
+async function unbanUser(userId) {
+    delete bans[userId];
+
+    saveBans();  // Guarda los cambios
+    return `Usuario desbaneado.`;
+}
 
 // Cargar configuración desde config.json o establecer valores por defecto
 const configPath = './config.json';
@@ -128,6 +178,14 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const { commandName, member, guild, options } = interaction;
 
+        // Asegurarse de que el comando solo puede ser usado por el creador del bot
+        if (commandName === 'servers' && interaction.user.id !== process.env.USER_ID) {
+            return interaction.reply({
+                content: '❌ No tienes permisos para usar este comando.',
+                ephemeral: true
+            });
+        }
+
         if (!guild) {
             return interaction.reply({ content: 'Este comando solo puede ser usado en un servidor.', ephemeral: true });
         }
@@ -137,8 +195,124 @@ client.on(Events.InteractionCreate, async interaction => {
 
         if (commandName === 'ping') {
             await interaction.reply('🏓 Pong!');
+        } else if (commandName === 'coinflip') {
+            const result = Math.random() < 0.5 ? '🍀 Cara' : '💰 Cruz';
+            await interaction.reply(`El resultado de la tirada es: ${result}`);
+        } else if (commandName === 'botinfo') {
+            const botInfo = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('Información del Bot')
+                .setDescription('Aquí están los detalles sobre el bot:')
+                .addFields(
+                    { name: 'Nombre', value: client.user.username, inline: true },
+                    { name: 'ID', value: client.user.id, inline: true },
+                    { name: 'Creador', value: 'MZXN', inline: true },
+                    { name: 'Fecha de Creación', value: '22 de enero de 2025', inline: true },
+                    { name: 'Versión', value: '3.1.0', inline: true }  // Mostrando la versión
+                )
+                .setThumbnail(client.user.displayAvatarURL({ dynamic: true }))
+                .setTimestamp()
+                .setFooter({ text: `Solicitado por ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
+        
+            await interaction.reply({ embeds: [botInfo] });
+        
         } else if (commandName === 'hola') {
             await interaction.reply('👋 ¡Hola!');
+        } else if (commandName === 'servers') {
+            let response = '🤖 Estoy en los siguientes servidores:\n';
+        
+            // Iterar sobre todos los servidores en los que está el bot
+            for (const [id, guild] of client.guilds.cache) {
+                try {
+                    // Agregar el nombre, ID del servidor y miembros a la respuesta
+                    response += `**${guild.name}** (ID: ${guild.id}) - ${guild.memberCount} miembros\n`;
+                } catch (error) {
+                    console.error(`Error al obtener la información para ${guild.name}:`, error);
+                    response += `**${guild.name}** - ❌ Error al obtener la información\n`;
+                }
+            }
+        
+            // Responder con la lista de servidores, IDs y miembros
+            await interaction.reply(response);
+        
+        // Aquí puedes continuar con el resto de tus comandos, como 'mute' y otros
+        } else if (commandName === 'mute') {
+            const user = options.getUser('usuario');
+            const time = options.getString('tiempo'); // tiempo en minutos
+            const member = await guild.members.fetch(user.id);
+        
+            if (!member) {
+                return interaction.reply({ content: 'Usuario no encontrado', ephemeral: true });
+            }
+        
+            // Aplicar mute
+            await member.timeout(parseInt(time) * 60000, 'Mute por tiempo especificado');
+        
+            // Guardar en mutes.json
+            muteUser(user.id, time);
+        
+            await interaction.reply(`✅ El usuario ${user.tag} ha sido muteado por ${time} minutos.`);
+        
+            // Desmute después del tiempo especificado
+            setTimeout(async () => {
+                await member.timeout(null); // Elimina el timeout
+                await interaction.followUp(`🔊 El usuario ${user.tag} ha sido desmuteado.`);
+        
+                // Eliminar de mutes.json
+                unmuteUser(user.id);
+            }, parseInt(time) * 60000); // Tiempo en minutos convertido a milisegundos
+
+        } else if (commandName === 'unmute') {
+            const user = options.getUser('usuario');
+            const member = await guild.members.fetch(user.id);
+        
+            if (!member) {
+                return interaction.reply({ content: 'Usuario no encontrado', ephemeral: true });
+            }
+        
+            await member.timeout(null); // Elimina el timeout
+            unmuteUser(user.id); // Eliminar de mutes.json
+        
+            await interaction.reply(`✅ El usuario ${user.tag} ha sido desmuteado.`);
+        
+
+        } else if (commandName === 'ban') {
+            const user = options.getUser('usuario');
+            const time = options.getString('tiempo'); // tiempo en días
+            const member = await guild.members.fetch(user.id);
+        
+            if (!member) {
+                return interaction.reply({ content: 'Usuario no encontrado', ephemeral: true });
+            }
+        
+            // Aplicar ban
+            await member.ban({ reason: 'Baneo temporal' });
+        
+            // Guardar en bans.json
+            banUser(user.id, time);
+        
+            await interaction.reply(`✅ El usuario ${user.tag} ha sido baneado por ${time} días.`);
+        
+            // Desbaneado después del tiempo especificado
+            setTimeout(async () => {
+                await guild.members.unban(user.id);
+                await interaction.followUp(`🔓 El usuario ${user.tag} ha sido desbaneado.`);
+        
+                // Eliminar de bans.json
+                unbanUser(user.id);
+            }, parseInt(time) * 86400000); // Tiempo en días convertido a milisegundos     
+
+        } else if (commandName === 'unban') {
+            const userId = options.getString('usuario');
+            const user = await client.users.fetch(userId);
+        
+            await guild.members.unban(user.id);
+        
+            // Eliminar del bans.json
+            unbanUser(userId);
+        
+            await interaction.reply(`✅ El usuario ${user.tag} ha sido desbaneado.`);
+
         } else if (commandName === 'anti_links_enable') {
             if (config.servers[guild.id].antiLinks) {
                 return interaction.reply('⚠️ **El anti-links ya está activado en este servidor.**');
@@ -220,7 +394,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 .addFields(
                     { name: '/ping', value: '🏓 Comprueba la latencia del bot.' },
                     { name: '/hola', value: '👋 Saluda al bot.' },
-                    { name: '/scanlink', value: '⚙️ Escanea un link para detectar si es malicioso.' },
+                    { name: '/coinflip', value: '🪙 Lanza una moneda al aire.' },  
+                    { name: '/botinfo', value: 'ℹ️ Muestra información sobre el bot.' },  
+                    { name: '/servers', value: '🖥️ Muestra los servidores en los que está el bot. *Solo el dueño del bot puede usar este comando.*' },  
+                    { name: '/mute', value: '🔇 Mutea a un usuario por un tiempo.' },  
+                    { name: '/unmute', value: '🔊 Desmutea a un usuario.' },  
+                    { name: '/ban', value: '🚫 Banea a un usuario por un tiempo.' },  
+                    { name: '/unban', value: '🔓 Desbanea a un usuario.' },
+                    { name: '/scanlink', value: '🔍 Escanea un link para detectar si es malicioso.' },
                     { name: '/anti_links_enable', value: '🚫 Activa el anti-links para bloquear invitaciones de Discord.' },
                     { name: '/anti_links_disable', value: '✅ Desactiva el anti-links.' },
                     { name: '/serverinfo', value: '📌 Muestra información del servidor.' },
