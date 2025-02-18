@@ -12,9 +12,34 @@ const commands = [
     new SlashCommandBuilder().setName('ban').setDescription('🚫 Banea a un usuario por un tiempo')
         .addUserOption(option => option.setName('usuario').setDescription('Usuario a banear').setRequired(true))
         .addStringOption(option => option.setName('tiempo').setDescription('Tiempo en días').setRequired(true)),
-    new SlashCommandBuilder().setName('unban').setDescription('🔓 Desbanea a un usuario')
-        .addStringOption(option => option.setName('usuario').setDescription('ID del usuario a desbanear').setRequired(true)),
+        new SlashCommandBuilder().setName('unban').setDescription('🔓 Desbanea a un usuario')
+        .addStringOption(option => 
+            option.setName('id') // Se cambió 'ID' a 'id' con minúsculas
+                .setDescription('ID del usuario a desbanear')
+                .setRequired(true)
+        ),
         new SlashCommandBuilder().setName('servers').setDescription('🖥️ Muestra los servidores en los que está el bot'),
+        new SlashCommandBuilder()
+        .setName('rule34')
+        .setDescription('Busca contenido NSFW en Rule34 o Danbooru')
+        .addStringOption(option =>
+            option.setName('tag')
+                .setDescription('Etiqueta para la búsqueda')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('cantidad')
+                .setDescription('Cantidad de imágenes a obtener')
+                .setRequired(false)
+                .setMinValue(1)
+                .setMaxValue(10))
+        .addStringOption(option =>
+            option.setName('source')
+                .setDescription('Fuente de contenido (danbooru o rule34)')
+                .setRequired(false)
+                .setChoices(
+                    { name: 'Danbooru', value: 'danbooru' },
+                    { name: 'Rule34', value: 'rule34' },
+                )),
         new SlashCommandBuilder().setName('coinflip').setDescription('🎲 Lanza una moneda (Cara o Cruz).'),
         new SlashCommandBuilder().setName('botinfo').setDescription('🤖 Muestra información sobre el bot.'),
         new SlashCommandBuilder().setName('anti_links_enable').setDescription('🚫 Activa el anti-links de invitaciones.'),
