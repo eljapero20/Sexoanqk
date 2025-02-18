@@ -1,6 +1,15 @@
-require('dotenv').config(); 
+require('dotenv').config();
+const { Client, GatewayIntentBits, PermissionsBitField, Events, EmbedBuilder } = require("discord.js");
 const axios = require('axios'); // Importar Axios para subir archivos a Imgur
+const fs = require('fs'); // Importar el módulo fs
+const xml2js = require('xml2js'); // Asegúrate de tener esto al inicio de tu archivo
+const parser = new xml2js.Parser(); // Inicializa el parser XML
 
+
+// Accediendo a las variables de entorno
+// API key y login directamente en el código
+const DANBOORU_API_KEY = 'DTkViCoSWkC7F519hu2Hc87f'; // Tu API key
+const DANBOORU_LOGIN = 'MZXN'; // Tu login
 const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID; // Cargar Client ID de Imgur
 const VIRUSTOTAL_API_KEY = process.env.VIRUSTOTAL_API_KEY; // Cargar API Key de VirusTotal
 
@@ -13,57 +22,17 @@ if (!token) {
     process.exit(1);  // Terminar el proceso si no hay token
 }
 
-const fs = require('fs');
-const { Client, GatewayIntentBits, PermissionsBitField, Events, EmbedBuilder } = require("discord.js");
-const mutesPath = './mutes.json';
-const bansPath = './bans.json';
+// Definir la función checkPermissions
+function checkPermissions(interaction, permission) {
+    if (!interaction.member.permissions.has(permission)) {
+        return interaction.reply({ content: `❌ No tienes permisos para usar este comando.`, ephemeral: true });
+    }
 
-// Cargar mutes y bans desde los archivos si existen
-let mutes = fs.existsSync(mutesPath) ? JSON.parse(fs.readFileSync(mutesPath, 'utf8')) : {};
-let bans = fs.existsSync(bansPath) ? JSON.parse(fs.readFileSync(bansPath, 'utf8')) : {};
+    if (!interaction.guild.members.me.permissions.has(permission)) {
+        return interaction.reply({ content: `❌ No tengo permisos para ejecutar esta acción.`, ephemeral: true });
+    }
 
-// Función para guardar mutes en mutes.json
-function saveMutes() {
-    fs.writeFileSync(mutesPath, JSON.stringify(mutes, null, 4));
-}
-
-// Función para guardar bans en bans.json
-function saveBans() {
-    fs.writeFileSync(bansPath, JSON.stringify(bans, null, 4));
-}
-
-// Función para agregar un mute
-async function muteUser(userId, time) {
-    const until = new Date(Date.now() + time * 60000); // Calcula el tiempo de expiración
-    mutes[userId] = { until: until.toISOString() };
-
-    saveMutes();  // Guarda el mute
-    return `Usuario muteado hasta ${until.toISOString()}`;
-}
-
-// Función para eliminar un mute
-async function unmuteUser(userId) {
-    delete mutes[userId];
-
-    saveMutes();  // Guarda los cambios
-    return `Usuario desmuteado.`;
-}
-
-// Función para agregar un ban
-async function banUser(userId, time) {
-    const until = new Date(Date.now() + time * 86400000); // Calcula el tiempo de expiración (en días)
-    bans[userId] = { until: until.toISOString() };
-
-    saveBans();  // Guarda el ban
-    return `Usuario baneado hasta ${until.toISOString()}`;
-}
-
-// Función para eliminar un ban
-async function unbanUser(userId) {
-    delete bans[userId];
-
-    saveBans();  // Guarda los cambios
-    return `Usuario desbaneado.`;
+    return true;
 }
 
 // Cargar configuración desde config.json o establecer valores por defecto
@@ -218,101 +187,299 @@ client.on(Events.InteractionCreate, async interaction => {
         
         } else if (commandName === 'hola') {
             await interaction.reply('👋 ¡Hola!');
+            
+        } else if (commandName === 'rule34') {
+            // Verificar si el comando es ejecutado en un canal NSFW
+            if (!interaction.channel.nsfw) {
+                return interaction.reply({
+                    content: '❌ Este comando solo puede ser usado en canales con contenido NSFW.',
+                    ephemeral: true,
+                });
+            }
+        
+            const tag = options.getString('tag');
+            const numImages = options.getInteger('cantidad') || 1; // Número de imágenes (por defecto 1)
+            const source = options.getString('source') || 'danbooru';  // Añadimos la opción de fuente (danbooru o rule34)
+        
+            if (!tag) {
+                return interaction.reply({
+                    content: '❌ Debes proporcionar una etiqueta para buscar.',
+                    ephemeral: true,
+                });
+            }
+        
+            try {
+                await interaction.deferReply();
+            
+                let posts = [];
+                if (source === 'danbooru') {
+                    const response = await axios.get(`https://danbooru.donmai.us/posts.json?tags=${tag}&limit=${numImages * 5}&api_key=${DANBOORU_API_KEY}&login=${DANBOORU_LOGIN}`);
+                    console.log('Respuesta de Danbooru:', response.data); // Aquí agregamos el log para verificar la respuesta
+                    posts = response.data; // La respuesta de Danbooru debería ser un array
+                } else if (source === 'rule34') {
+                    const xmlResponse = await axios.get(`https://rule34.xxx/index.php?page=dapi&s=post&q=index&tags=${tag}&limit=${numImages * 5}`);
+                    
+                    // Usamos xml2js para parsear la respuesta XML
+                    parser.parseString(xmlResponse.data, (err, result) => {
+                        if (err) {
+                            console.error('Error al parsear XML de Rule34:', err);
+                            return interaction.reply({
+                                content: '❌ Hubo un error al procesar la respuesta de Rule34.',
+                                ephemeral: true,
+                            });
+                        }
+                        posts = result.posts.post; // La estructura después de parsear el XML
+                    });
+                }
+            
+                // Asegurarse de que 'posts' es un arreglo antes de usar .filter()
+                if (!Array.isArray(posts)) {
+                    return interaction.editReply({
+                        content: '❌ Error al obtener datos, la respuesta no es válida.',
+                        ephemeral: true,
+                    });
+                }
+            
+                // Si no se encuentran resultados
+                if (posts.length === 0) {
+                    return interaction.editReply({
+                        content: '❌ No se encontraron resultados para esta etiqueta.',
+                        ephemeral: true,
+                    });
+                }
+            
+                // Filtrar imágenes repetidas por el ID
+                const sentPosts = new Set();
+                const availablePosts = posts.filter(post => {
+                    const postId = post.id;
+                    if (sentPosts.has(postId)) {
+                        return false;
+                    }
+                    sentPosts.add(postId);
+                    return true;
+                });
+            
+                if (availablePosts.length < numImages) {
+                    return interaction.editReply({
+                        content: `❌ No hay suficientes imágenes disponibles con esa etiqueta. Solo se encontraron ${availablePosts.length} imagen(es).`,
+                        ephemeral: true,
+                    });
+                }
+            
+                // Mezclar las imágenes aleatoriamente para garantizar variedad
+                const shuffledPosts = availablePosts.sort(() => Math.random() - 0.5);
+            
+                // Seleccionar las primeras imágenes disponibles
+                const selectedPosts = shuffledPosts.slice(0, numImages);
+            
+                // Crear los embeds para las imágenes o videos
+                const mediaEmbeds = [];
+                selectedPosts.forEach(post => {
+                    let embed = {
+                        title: `Contenido de ${source === 'danbooru' ? 'Danbooru' : 'Rule34'}`,
+                        url: `https://${source === 'danbooru' ? 'danbooru.donmai.us' : 'rule34.xxx'}/posts/${post.id}`,
+                    };
+            
+                    // Verificamos si es un video y lo procesamos como video
+                    if (post.video_url) {
+                        embed = {
+                            ...embed,
+                            video: { url: post.video_url },
+                        };
+                    } else {
+                        embed = {
+                            ...embed,
+                            image: { url: post.file_url },
+                        };
+                    }
+            
+                    mediaEmbeds.push(embed);
+                });
+            
+                // Limitar el número de imágenes/videos a los solicitados
+                const maxEmbedsPerMessage = 10;
+                let messages = [];
+            
+                while (mediaEmbeds.length > 0) {
+                    const embedsToSend = mediaEmbeds.splice(0, maxEmbedsPerMessage);
+                    messages.push({
+                        content: `Aquí tienes ${embedsToSend.length} contenido(s) de ${source === 'danbooru' ? 'Danbooru' : 'Rule34'} con la etiqueta: ${tag}`,
+                        embeds: embedsToSend,
+                    });
+                }
+            
+                // Enviar todos los mensajes en partes pequeñas para no agotar el tiempo de interacción
+                for (let message of messages) {
+                    await interaction.followUp(message);
+                }
+            
+            } catch (error) {
+                console.error('Error al obtener contenido:', error);
+                return interaction.reply({
+                    content: '❌ Hubo un error al obtener las imágenes o videos.',
+                    ephemeral: true,
+                });
+            }
+            
         } else if (commandName === 'servers') {
             let response = '🤖 Estoy en los siguientes servidores:\n';
         
-            // Iterar sobre todos los servidores en los que está el bot
             for (const [id, guild] of client.guilds.cache) {
                 try {
-                    // Agregar el nombre, ID del servidor y miembros a la respuesta
                     response += `**${guild.name}** (ID: ${guild.id}) - ${guild.memberCount} miembros\n`;
                 } catch (error) {
                     console.error(`Error al obtener la información para ${guild.name}:`, error);
-                    response += `**${guild.name}** - ❌ Error al obtener la información\n`;
+                    response += `**${guild.name}** - ❌ Error\n`;
                 }
             }
         
-            // Responder con la lista de servidores, IDs y miembros
+            if (response.length > 2000) {
+                response = response.slice(0, 1997) + '...';
+            }
+        
             await interaction.reply(response);
         
-        // Aquí puedes continuar con el resto de tus comandos, como 'mute' y otros
         } else if (commandName === 'mute') {
-            const user = options.getUser('usuario');
-            const time = options.getString('tiempo'); // tiempo en minutos
-            const member = await guild.members.fetch(user.id);
+            if (!checkPermissions(interaction, PermissionsBitField.Flags.ModerateMembers)) return;
         
-            if (!member) {
-                return interaction.reply({ content: 'Usuario no encontrado', ephemeral: true });
+            const user = options.getUser('usuario');
+            let time = parseInt(options.getString('tiempo'));
+        
+            if (isNaN(time) || time <= 0) {
+                return interaction.reply({ content: '❌ El tiempo debe ser un número positivo (en minutos).', ephemeral: true });
             }
         
-            // Aplicar mute
-            await member.timeout(parseInt(time) * 60000, 'Mute por tiempo especificado');
+            let targetMember;
+            try {
+                targetMember = await guild.members.fetch(user.id);
+            } catch (error) {
+                return interaction.reply({ content: '❌ No se pudo encontrar al usuario en este servidor.', ephemeral: true });
+            }
         
-            // Guardar en mutes.json
-            muteUser(user.id, time);
+            if (targetMember.isCommunicationDisabled()) {
+                return interaction.reply({ content: '❌ El usuario ya está muteado.', ephemeral: true });
+            }
         
-            await interaction.reply(`✅ El usuario ${user.tag} ha sido muteado por ${time} minutos.`);
+            // Deferimos la respuesta para evitar que el bot se quede bloqueado
+            await interaction.deferReply();
         
-            // Desmute después del tiempo especificado
-            setTimeout(async () => {
-                await member.timeout(null); // Elimina el timeout
-                await interaction.followUp(`🔊 El usuario ${user.tag} ha sido desmuteado.`);
+            try {
+                // Aplicar mute (timeout)
+                await targetMember.timeout(time * 60000, 'Mute por tiempo especificado');
+                await interaction.followUp(`✅ El usuario ${user.tag} ha sido muteado por ${time} minutos.`);
         
-                // Eliminar de mutes.json
-                unmuteUser(user.id);
-            }, parseInt(time) * 60000); // Tiempo en minutos convertido a milisegundos
-
+                // Programar el desmute automático
+                setTimeout(async () => {
+                    try {
+                        await targetMember.timeout(null);  // Desmutear al usuario después del tiempo
+                        if (interaction.channel) {
+                            await interaction.channel.send(`🔊 El usuario ${user.tag} ha sido desmuteado.`);
+                        }
+                    } catch (error) {
+                        console.error(`Error al desmutear automáticamente a ${user.tag}:`, error);
+                        await interaction.followUp({ content: `❌ Error al desmutear a ${user.tag}.`, ephemeral: true });
+                    }
+                }, time * 60000);  // Convertir el tiempo de minutos a milisegundos
+        
+            } catch (error) {
+                console.error(`Error al mutear a ${user.tag}:`, error);
+                await interaction.followUp({ content: `❌ Hubo un error al intentar mutear a ${user.tag}.`, ephemeral: true });
+            }
+        
         } else if (commandName === 'unmute') {
-            const user = options.getUser('usuario');
-            const member = await guild.members.fetch(user.id);
+            if (!checkPermissions(interaction, PermissionsBitField.Flags.ModerateMembers)) return;
         
-            if (!member) {
-                return interaction.reply({ content: 'Usuario no encontrado', ephemeral: true });
+            const user = options.getUser('usuario');
+            let member;
+            
+            try {
+                member = await guild.members.fetch(user.id);
+            } catch (error) {
+                return interaction.reply({ content: '❌ No se pudo encontrar al usuario en este servidor.', ephemeral: true });
             }
         
-            await member.timeout(null); // Elimina el timeout
-            unmuteUser(user.id); // Eliminar de mutes.json
+            // Verificar si el usuario está muteado
+            if (!member.isCommunicationDisabled()) {
+                return interaction.reply({ content: '❌ El usuario no está muteado.', ephemeral: true });
+            }
         
-            await interaction.reply(`✅ El usuario ${user.tag} ha sido desmuteado.`);
+            // Deferimos la respuesta para evitar que el bot se quede bloqueado
+            await interaction.deferReply();
         
-
+            try {
+                // Eliminar el mute (timeout)
+                await member.timeout(null);  // Desmutear al usuario
+        
+                // Responder después de que se haya completado la acción
+                await interaction.followUp(`✅ El usuario ${user.tag} ha sido desmuteado.`);
+            } catch (error) {
+                console.error(`Error al desmutear a ${user.tag}:`, error);
+                await interaction.followUp({ content: `❌ Hubo un error al intentar desmutear a ${user.tag}.`, ephemeral: true });
+            }
+        
+        
         } else if (commandName === 'ban') {
-            const user = options.getUser('usuario');
-            const time = options.getString('tiempo'); // tiempo en días
-            const member = await guild.members.fetch(user.id);
+            if (!checkPermissions(interaction, PermissionsBitField.Flags.BanMembers)) return;
         
-            if (!member) {
-                return interaction.reply({ content: 'Usuario no encontrado', ephemeral: true });
+            const user = options.getUser('usuario');
+            let time = parseInt(options.getString('tiempo'));
+        
+            if (isNaN(time) || time <= 0) {
+                return interaction.reply({ content: '❌ El tiempo debe ser un número positivo (en días).', ephemeral: true });
+            }
+        
+            let targetMember;
+            try {
+                targetMember = await guild.members.fetch(user.id);
+            } catch (error) {
+                return interaction.reply({ content: '❌ Usuario no encontrado en el servidor.', ephemeral: true });
             }
         
             // Aplicar ban
-            await member.ban({ reason: 'Baneo temporal' });
-        
-            // Guardar en bans.json
-            banUser(user.id, time);
-        
+            await targetMember.ban({ reason: 'Baneo temporal' });
             await interaction.reply(`✅ El usuario ${user.tag} ha sido baneado por ${time} días.`);
         
-            // Desbaneado después del tiempo especificado
+            // Desbanear después del tiempo especificado
             setTimeout(async () => {
-                await guild.members.unban(user.id);
-                await interaction.followUp(`🔓 El usuario ${user.tag} ha sido desbaneado.`);
+                try {
+                    await guild.members.unban(user.id);  // Elimina el ban
+                    await interaction.followUp(`🔓 El usuario ${user.tag} ha sido desbaneado.`);
+                } catch (error) {
+                    console.error(`Error al desbanear automáticamente a ${user.tag}:`, error);
+                }
+            }, time * 86400000);  // Convertir el tiempo de días a milisegundos
         
-                // Eliminar de bans.json
-                unbanUser(user.id);
-            }, parseInt(time) * 86400000); // Tiempo en días convertido a milisegundos     
-
+        
         } else if (commandName === 'unban') {
-            const userId = options.getString('usuario');
-            const user = await client.users.fetch(userId);
-        
-            await guild.members.unban(user.id);
-        
-            // Eliminar del bans.json
-            unbanUser(userId);
-        
-            await interaction.reply(`✅ El usuario ${user.tag} ha sido desbaneado.`);
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+                return interaction.reply({ content: '❌ No tienes permisos para usar este comando.', ephemeral: true });
+            }
 
+            // Obtener el ID del usuario
+            const userId = options.getString('id');
+
+            // Verificar si el ID es válido
+            if (!userId || isNaN(userId)) {
+                return interaction.reply({ content: '❌ El ID proporcionado no es válido.', ephemeral: true });
+            }
+
+            try {
+                // Verificar si el usuario está baneado
+                const bannedUsers = await guild.bans.fetch();
+                const userIsBanned = bannedUsers.has(userId);
+
+                if (!userIsBanned) {
+                    return interaction.reply({ content: '❌ El usuario no está baneado en este servidor.', ephemeral: true });
+                }
+
+                // Intentar desbanear al usuario
+                await guild.members.unban(userId);
+                await interaction.reply(`✅ El usuario con ID \`${userId}\` ha sido desbaneado.`);
+            } catch (error) {
+                console.error(`Error al desbanear al usuario con ID ${userId}:`, error);
+                await interaction.reply({ content: `❌ No se pudo desbanear al usuario con ID \`${userId}\`. Verifica que esté baneado o que el ID sea correcto.`, ephemeral: true });
+            }
+                
         } else if (commandName === 'anti_links_enable') {
             if (config.servers[guild.id].antiLinks) {
                 return interaction.reply('⚠️ **El anti-links ya está activado en este servidor.**');
@@ -401,6 +568,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     { name: '/unmute', value: '🔊 Desmutea a un usuario.' },  
                     { name: '/ban', value: '🚫 Banea a un usuario por un tiempo.' },  
                     { name: '/unban', value: '🔓 Desbanea a un usuario.' },
+                    { name: '/rule34', value: '🔞 Obtén imágenes o videos de Rule34 usando una etiqueta.' },
                     { name: '/scanlink', value: '🔍 Escanea un link para detectar si es malicioso.' },
                     { name: '/anti_links_enable', value: '🚫 Activa el anti-links para bloquear invitaciones de Discord.' },
                     { name: '/anti_links_disable', value: '✅ Desactiva el anti-links.' },
