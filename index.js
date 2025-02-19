@@ -272,46 +272,40 @@ client.on(Events.InteractionCreate, async interaction => {
                 // Seleccionar las primeras imágenes disponibles
                 const selectedPosts = shuffledPosts.slice(0, numImages);
             
-                // Crear los embeds para las imágenes o videos
-                const mediaEmbeds = [];
-                selectedPosts.forEach(post => {
-                    let embed = {
-                        title: `Contenido de ${source === 'danbooru' ? 'Danbooru' : 'Rule34'}`,
-                        url: `https://${source === 'danbooru' ? 'danbooru.donmai.us' : 'rule34.xxx'}/posts/${post.id}`,
-                    };
-            
-                    // Verificamos si es un video y lo procesamos como video
-                    if (post.video_url) {
-                        embed = {
-                            ...embed,
-                            video: { url: post.video_url },
-                        };
-                    } else {
-                        embed = {
-                            ...embed,
-                            image: { url: post.file_url },
-                        };
-                    }
-            
-                    mediaEmbeds.push(embed);
-                });
-            
-                // Limitar el número de imágenes/videos a los solicitados
-                const maxEmbedsPerMessage = 10;
-                let messages = [];
-            
-                while (mediaEmbeds.length > 0) {
-                    const embedsToSend = mediaEmbeds.splice(0, maxEmbedsPerMessage);
-                    messages.push({
-                        content: `Aquí tienes ${embedsToSend.length} contenido(s) de ${source === 'danbooru' ? 'Danbooru' : 'Rule34'} con la etiqueta: ${tag}`,
-                        embeds: embedsToSend,
-                    });
+                // Crear mensajes para imágenes y videos
+const mediaMessages = [];
+
+selectedPosts.forEach(post => {
+    const postUrl = source === 'danbooru'
+        ? `https://danbooru.donmai.us/posts/${post.id}`
+        : `https://rule34.xxx/index.php?page=post&s=view&id=${post.id}`;
+
+    if (post.file_url.endsWith('.mp4') || post.file_url.endsWith('.webm')) {
+        // Enviar videos como enlaces directos para que Discord los reproduzca
+        mediaMessages.push({
+            content: `🎥 **Video de [${source}](${postUrl}):**\n${post.file_url}`,
+        });
+    } else {
+        // Enviar imágenes como embeds
+        mediaMessages.push({
+            content: `🖼️ **Imagen de [${source}](${postUrl}):**`,
+            embeds: [
+                {
+                    title: `Contenido de ${source}`,
+                    url: postUrl,
+                    image: { url: post.file_url },
                 }
+            ]
+        });
+    }
+});
+
             
-                // Enviar todos los mensajes en partes pequeñas para no agotar el tiempo de interacción
-                for (let message of messages) {
-                    await interaction.followUp(message);
-                }
+                // Enviar los mensajes generados (imágenes y videos)
+for (const message of mediaMessages) {
+    await interaction.followUp(message);
+}
+
             
             } catch (error) {
                 console.error('Error al obtener contenido:', error);
