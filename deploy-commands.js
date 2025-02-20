@@ -20,26 +20,19 @@ const commands = [
         ),
         new SlashCommandBuilder().setName('servers').setDescription('🖥️ Muestra los servidores en los que está el bot'),
         new SlashCommandBuilder()
-        .setName('rule34')
-        .setDescription('Busca contenido NSFW en Rule34 o Danbooru')
-        .addStringOption(option =>
-            option.setName('tag')
-                .setDescription('Etiqueta para la búsqueda')
-                .setRequired(true))
-        .addIntegerOption(option =>
-            option.setName('cantidad')
-                .setDescription('Cantidad de imágenes a obtener')
-                .setRequired(false)
-                .setMinValue(1)
-                .setMaxValue(10))
-        .addStringOption(option =>
-            option.setName('source')
-                .setDescription('Fuente de contenido (danbooru o rule34)')
-                .setRequired(false)
-                .setChoices(
-                    { name: 'Danbooru', value: 'danbooru' },
-                    { name: 'Rule34', value: 'rule34' },
-                )),
+    .setName('rule34')
+    .setDescription('🔞 Busca contenido NSFW en Danbooru')
+    .addStringOption(option =>
+        option.setName('tag')
+            .setDescription('Etiqueta para la búsqueda')
+            .setRequired(true))
+    .addIntegerOption(option =>
+        option.setName('cantidad')
+            .setDescription('Cantidad de imágenes a obtener')
+            .setRequired(false)
+            .setMinValue(1)  // Valor mínimo
+            .setMaxValue(10) // Valor máximo
+    ),
         new SlashCommandBuilder().setName('coinflip').setDescription('🎲 Lanza una moneda (Cara o Cruz).'),
         new SlashCommandBuilder().setName('botinfo').setDescription('🤖 Muestra información sobre el bot.'),
         new SlashCommandBuilder().setName('anti_links_enable').setDescription('🚫 Activa el anti-links de invitaciones.'),
