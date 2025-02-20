@@ -5,6 +5,13 @@ const fs = require('fs'); // Importar el módulo fs
 const xml2js = require('xml2js'); // Asegúrate de tener esto al inicio de tu archivo
 const parser = new xml2js.Parser(); // Inicializa el parser XML
 
+// 🚨 Manejo global de errores
+deepErrorHandler();
+function deepErrorHandler() {
+    process.on('unhandledRejection', (reason) => console.error('💥 Rechazo no manejado:', reason));
+    process.on('uncaughtException', (err) => console.error('🔥 Excepción no capturada:', err));
+    process.on('rejectionHandled', () => console.warn('⚠️ Rechazo manejado tardíamente'));
+}
 
 // Accediendo a las variables de entorno
 // API key y login directamente en el código
@@ -13,13 +20,10 @@ const DANBOORU_LOGIN = 'MZXN'; // Tu login
 const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID; // Cargar Client ID de Imgur
 const VIRUSTOTAL_API_KEY = process.env.VIRUSTOTAL_API_KEY; // Cargar API Key de VirusTotal
 
-// Cargar el token del bot
 const token = process.env.TOKEN;
-
-// Verificar que el token se haya cargado correctamente
 if (!token) {
-    console.error('No se pudo cargar el token del bot. Asegúrate de que el archivo .env esté correctamente configurado.');
-    process.exit(1);  // Terminar el proceso si no hay token
+    console.error('❌ Token no encontrado. Verifica tu archivo .env.');
+    process.exit(1); 
 }
 
 // Definir la función checkPermissions
@@ -125,20 +129,43 @@ const client = new Client({
     ]
 });
 
+// 🛡️ Manejo de reconexiones
+client.on('error', console.error);
+client.on('reconnecting', () => console.warn('🔄 Reintentando conexión...'));
+client.on('resume', () => console.log('✅ Reconexión exitosa.'));
+
+client.once(Events.ClientReady, () => {
+    console.log(`✅ Bot activo como ${client.user.tag}`);
+    console.log(`🌐 Conectado a ${client.guilds.cache.size} servidores.`);
+});
+
+
 // Guardar configuración en config.json
 function saveConfig() {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 4));
+    try {
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 4));
+        console.log('💾 Configuración guardada.');
+    } catch (err) {
+        console.error('❌ Error al guardar configuración:', err);
+    }
 }
-
-// Evento cuando el bot está listo
-client.once(Events.ClientReady, () => {
-    console.log(`Bot conectado como ${client.user.tag}`);
-});
 
 // Evento cuando el bot se une a un nuevo servidor
 client.on(Events.GuildCreate, guild => {
     ensureServerConfig(guild.id);  // Aquí se asegura que el servidor tenga una configuración
     console.log(`✅ Nuevo servidor añadido: ${guild.name} (${guild.id})`);
+});
+
+// Evento cuando el bot es eliminado de un servidor
+client.on(Events.GuildDelete, guild => {
+    console.warn(`❌ Bot eliminado de: ${guild.name} (${guild.id})`);
+    if (config.servers[guild.id]) {
+        delete config.servers[guild.id];  // 🗑️ Eliminar configuración del servidor
+        saveConfig();  // 💾 Guardar cambios
+        console.log(`🗑️ Configuración eliminada para ${guild.name} (${guild.id})`);
+    } else {
+        console.log(`ℹ️ No se encontró configuración para ${guild.name}, no se eliminó nada.`);
+    }
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -163,7 +190,11 @@ client.on(Events.InteractionCreate, async interaction => {
         ensureServerConfig(guild.id);
 
         if (commandName === 'ping') {
-            await interaction.reply('🏓 Pong!');
+            const sent = await interaction.reply({ content: '🏓 Calculando latencia...', fetchReply: true });
+            const latency = sent.createdTimestamp - interaction.createdTimestamp;
+            const apiLatency = Math.round(interaction.client.ws.ping);
+        
+            await interaction.editReply(`🏓 Pong!\nLatencia del bot: ${latency}ms\nLatencia de la API: ${apiLatency}ms`);        
         } else if (commandName === 'coinflip') {
             const result = Math.random() < 0.5 ? '🍀 Cara' : '💰 Cruz';
             await interaction.reply(`El resultado de la tirada es: ${result}`);
@@ -177,7 +208,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     { name: 'ID', value: client.user.id, inline: true },
                     { name: 'Creador', value: 'MZXN', inline: true },
                     { name: 'Fecha de Creación', value: '22 de enero de 2025', inline: true },
-                    { name: 'Versión', value: '3.1.0', inline: true }  // Mostrando la versión
+                    { name: 'Versión', value: '3.2.5', inline: true }  // Mostrando la versión
                 )
                 .setThumbnail(client.user.displayAvatarURL({ dynamic: true }))
                 .setTimestamp()
