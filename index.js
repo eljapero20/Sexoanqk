@@ -208,7 +208,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     { name: 'ID', value: client.user.id, inline: true },
                     { name: 'Creador', value: 'MZXN', inline: true },
                     { name: 'Fecha de Creación', value: '22 de enero de 2025', inline: true },
-                    { name: 'Versión', value: '3.2.5', inline: true }  // Mostrando la versión
+                    { name: 'Versión', value: '3.3.0', inline: true }  // Mostrando la versión
                 )
                 .setThumbnail(client.user.displayAvatarURL({ dynamic: true }))
                 .setTimestamp()
@@ -218,7 +218,6 @@ client.on(Events.InteractionCreate, async interaction => {
         
         } else if (commandName === 'hola') {
             await interaction.reply('👋 ¡Hola!');
-            
         } else if (commandName === 'rule34') {
             // Verificar si el comando es ejecutado en un canal NSFW
             if (!interaction.channel.nsfw) {
@@ -230,7 +229,6 @@ client.on(Events.InteractionCreate, async interaction => {
         
             const tag = options.getString('tag');
             const numImages = options.getInteger('cantidad') || 1; // Número de imágenes (por defecto 1)
-            const source = options.getString('source') || 'danbooru';  // Añadimos la opción de fuente (danbooru o rule34)
         
             if (!tag) {
                 return interaction.reply({
@@ -241,28 +239,13 @@ client.on(Events.InteractionCreate, async interaction => {
         
             try {
                 await interaction.deferReply();
-            
+        
                 let posts = [];
-                if (source === 'danbooru') {
-                    const response = await axios.get(`https://danbooru.donmai.us/posts.json?tags=${tag}&limit=${numImages * 5}&api_key=${DANBOORU_API_KEY}&login=${DANBOORU_LOGIN}`);
-                    console.log('Respuesta de Danbooru:', response.data); // Aquí agregamos el log para verificar la respuesta
-                    posts = response.data; // La respuesta de Danbooru debería ser un array
-                } else if (source === 'rule34') {
-                    const xmlResponse = await axios.get(`https://rule34.xxx/index.php?page=dapi&s=post&q=index&tags=${tag}&limit=${numImages * 5}`);
-                    
-                    // Usamos xml2js para parsear la respuesta XML
-                    parser.parseString(xmlResponse.data, (err, result) => {
-                        if (err) {
-                            console.error('Error al parsear XML de Rule34:', err);
-                            return interaction.reply({
-                                content: '❌ Hubo un error al procesar la respuesta de Rule34.',
-                                ephemeral: true,
-                            });
-                        }
-                        posts = result.posts.post; // La estructura después de parsear el XML
-                    });
-                }
-            
+                // Usamos Danbooru directamente
+                const response = await axios.get(`https://danbooru.donmai.us/posts.json?tags=${tag}&limit=${numImages * 5}&api_key=${DANBOORU_API_KEY}&login=${DANBOORU_LOGIN}`);
+                console.log('Respuesta de Danbooru:', response.data); // Aquí agregamos el log para verificar la respuesta
+                posts = response.data; // La respuesta de Danbooru debería ser un array
+        
                 // Asegurarse de que 'posts' es un arreglo antes de usar .filter()
                 if (!Array.isArray(posts)) {
                     return interaction.editReply({
@@ -270,7 +253,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         ephemeral: true,
                     });
                 }
-            
+        
                 // Si no se encuentran resultados
                 if (posts.length === 0) {
                     return interaction.editReply({
@@ -278,7 +261,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         ephemeral: true,
                     });
                 }
-            
+        
                 // Filtrar imágenes repetidas por el ID
                 const sentPosts = new Set();
                 const availablePosts = posts.filter(post => {
@@ -289,63 +272,59 @@ client.on(Events.InteractionCreate, async interaction => {
                     sentPosts.add(postId);
                     return true;
                 });
-            
+        
                 if (availablePosts.length < numImages) {
                     return interaction.editReply({
                         content: `❌ No hay suficientes imágenes disponibles con esa etiqueta. Solo se encontraron ${availablePosts.length} imagen(es).`,
                         ephemeral: true,
                     });
                 }
-            
+        
                 // Mezclar las imágenes aleatoriamente para garantizar variedad
                 const shuffledPosts = availablePosts.sort(() => Math.random() - 0.5);
-            
+        
                 // Seleccionar las primeras imágenes disponibles
                 const selectedPosts = shuffledPosts.slice(0, numImages);
-            
+        
                 // Crear mensajes para imágenes y videos
-const mediaMessages = [];
-
-selectedPosts.forEach(post => {
-    const postUrl = source === 'danbooru'
-        ? `https://danbooru.donmai.us/posts/${post.id}`
-        : `https://rule34.xxx/index.php?page=post&s=view&id=${post.id}`;
-
-    if (post.file_url.endsWith('.mp4') || post.file_url.endsWith('.webm')) {
-        // Enviar videos como enlaces directos para que Discord los reproduzca
-        mediaMessages.push({
-            content: `🎥 **Video de [${source}](${postUrl}):**\n${post.file_url}`,
-        });
-    } else {
-        // Enviar imágenes como embeds
-        mediaMessages.push({
-            content: `🖼️ **Imagen de [${source}](${postUrl}):**`,
-            embeds: [
-                {
-                    title: `Contenido de ${source}`,
-                    url: postUrl,
-                    image: { url: post.file_url },
-                }
-            ]
-        });
-    }
-});
-
-            
+                const mediaMessages = [];
+        
+                selectedPosts.forEach(post => {
+                    const postUrl = `https://danbooru.donmai.us/posts/${post.id}`;
+        
+                    if (post.file_url.endsWith('.mp4') || post.file_url.endsWith('.webm')) {
+                        // Enviar videos como enlaces directos para que Discord los reproduzca
+                        mediaMessages.push({
+                            content: `🎥 **Video de [Danbooru](${postUrl}):**\n${post.file_url}`,
+                        });
+                    } else {
+                        // Enviar imágenes como embeds
+                        mediaMessages.push({
+                            content: `🖼️ **Imagen de [Danbooru](${postUrl}):**`,
+                            embeds: [
+                                {
+                                    title: `Contenido de Danbooru`,
+                                    url: postUrl,
+                                    image: { url: post.file_url },
+                                }
+                            ]
+                        });
+                    }
+                });
+        
                 // Enviar los mensajes generados (imágenes y videos)
-for (const message of mediaMessages) {
-    await interaction.followUp(message);
-}
-
-            
+                for (const message of mediaMessages) {
+                    await interaction.followUp(message);
+                }
+        
             } catch (error) {
                 console.error('Error al obtener contenido:', error);
                 return interaction.reply({
                     content: '❌ Hubo un error al obtener las imágenes o videos.',
                     ephemeral: true,
                 });
-            }
-            
+            }        
+                
         } else if (commandName === 'servers') {
             let response = '🤖 Estoy en los siguientes servidores:\n';
         
